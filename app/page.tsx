@@ -2,26 +2,23 @@
 
 import {
   AlertTriangle,
-  ArrowRight,
   BadgeCheck,
   BookOpenCheck,
   BriefcaseBusiness,
-  Check,
-  ClipboardList,
+  Building2,
+  ChevronRight,
+  ClipboardCheck,
   Download,
-  ExternalLink,
-  FileCheck2,
+  FileText,
   Gauge,
   Landmark,
-  LockKeyhole,
-  Mail,
-  Play,
+  Plus,
   ShieldCheck,
+  Sparkles,
   UsersRound,
 } from "lucide-react"
-import { Adobe, Copilot, OpenAI } from "@lobehub/icons"
-import type { ComponentType, SVGProps } from "react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import type { Dispatch, SetStateAction } from "react"
+import { useEffect, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -34,1129 +31,1375 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress"
-import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
-type ToolOption = {
+type RiskCategory = "Minimal" | "Limited" | "High"
+type DataSensitivity = "Public" | "Internal" | "Personal" | "Special category"
+type RoleCategory = "General" | "HR" | "Marketing" | "Leadership" | "Legal"
+type ViewKey = "overview" | "employees" | "register" | "training" | "vault"
+
+type Employee = {
   id: string
-  label: string
-  risk: number
-  note: string
-  brand?: ComponentType<{ size?: number; className?: string }>
-  fallback?: ComponentType<SVGProps<SVGSVGElement>>
+  name: string
+  email: string
+  role: RoleCategory
+  assignedModules: string[]
+  completedModules: string[]
+  score: number
 }
 
-const toolOptions: ToolOption[] = [
-  {
-    id: "chatgpt",
-    label: "ChatGPT or Claude",
-    risk: 18,
-    note: "Public AI tools in daily staff workflows.",
-    brand: OpenAI,
-  },
-  {
-    id: "copilot",
-    label: "Microsoft Copilot",
-    risk: 14,
-    note: "Embedded AI across documents and email.",
-    brand: Copilot,
-  },
-  {
-    id: "canva",
-    label: "Canva or Adobe AI",
-    risk: 10,
-    note: "Marketing content, images, and campaign copy.",
-    brand: Adobe,
-  },
-  {
-    id: "crm",
-    label: "CRM AI",
-    risk: 16,
-    note: "Customer records and sales recommendations.",
-    fallback: UsersRound,
-  },
-  {
-    id: "cv",
-    label: "CV screening",
-    risk: 28,
-    note: "Employment decisions can trigger high-risk duties.",
-    fallback: ClipboardList,
-  },
-]
-
-type RegisterRow = {
-  tool: string
+type RegisterItem = {
+  id: string
+  toolName: string
+  ownerRole: RoleCategory
   useCase: string
-  data: string
-  risk: string
-  status: string
-  brand?: ComponentType<{ size?: number; className?: string }>
-  fallback?: ComponentType<SVGProps<SVGSVGElement>>
+  risk: RiskCategory
+  data: DataSensitivity
+  employees: string[]
 }
 
-const registerRows: RegisterRow[] = [
+type ModuleDefinition = {
+  id: string
+  title: string
+  audience: RoleCategory | "All"
+  duration: string
+  outcomes: string[]
+}
+
+type WorkspaceState = {
+  companyName: string
+  policyVersion: string
+  reviewDate: string
+  employees: Employee[]
+  register: RegisterItem[]
+}
+
+const STORAGE_KEY = "aifirst-workspace-v1"
+
+const moduleDefinitions: ModuleDefinition[] = [
   {
-    tool: "ChatGPT Team",
-    useCase: "HR drafts",
-    data: "Personal data",
-    risk: "High",
-    status: "HR module pending",
-    brand: OpenAI,
+    id: "foundation",
+    title: "Generative AI foundations",
+    audience: "All",
+    duration: "30 min",
+    outcomes: [
+      "Explain how probabilistic AI tools fail",
+      "Identify confidential and personal data risks",
+      "Follow internal escalation and acceptable use rules",
+    ],
   },
   {
-    tool: "Microsoft Copilot",
-    useCase: "Email summaries",
-    data: "Internal records",
-    risk: "Limited",
-    status: "Foundation complete",
-    brand: Copilot,
+    id: "hr",
+    title: "HR and recruitment controls",
+    audience: "HR",
+    duration: "55 min",
+    outcomes: [
+      "Handle CV screening and employment decisions safely",
+      "Recognize Annex III high-risk triggers",
+      "Document human oversight on employment workflows",
+    ],
   },
   {
-    tool: "Canva AI",
-    useCase: "Social content",
-    data: "Public data",
-    risk: "Minimal",
-    status: "Marketing module due",
-    brand: Adobe,
+    id: "marketing",
+    title: "Marketing and content review",
+    audience: "Marketing",
+    duration: "40 min",
+    outcomes: [
+      "Review AI-generated claims before publication",
+      "Track IP and disclosure risks",
+      "Separate public prompts from internal source material",
+    ],
   },
   {
-    tool: "Salesforce AI",
-    useCase: "Lead scoring",
-    data: "Customer data",
-    risk: "Limited",
-    status: "Register review due",
-    fallback: UsersRound,
+    id: "board",
+    title: "Board and executive briefing",
+    audience: "Leadership",
+    duration: "75 min",
+    outcomes: [
+      "Exercise meaningful oversight on AI deployment",
+      "Review literacy coverage and evidence cadence",
+      "Approve policy and refresh decisions",
+    ],
   },
 ]
 
-const trainingRows = [
-  ["Foundation", "All staff", "30 min", "81% complete"],
-  ["HR and recruitment", "People teams", "55 min", "3 seats pending"],
-  ["Board briefing", "Directors", "75 min", "Scheduled"],
-]
+const defaultState: WorkspaceState = {
+  companyName: "Riverbank Hospitality Ltd.",
+  policyVersion: "1.4",
+  reviewDate: "2026-08-02",
+  employees: [
+    {
+      id: "emp-1",
+      name: "Sinead Murphy",
+      email: "sinead@riverbank.ie",
+      role: "HR",
+      assignedModules: ["foundation", "hr"],
+      completedModules: ["foundation"],
+      score: 82,
+    },
+    {
+      id: "emp-2",
+      name: "Tom Breen",
+      email: "tom@riverbank.ie",
+      role: "Marketing",
+      assignedModules: ["foundation", "marketing"],
+      completedModules: ["foundation", "marketing"],
+      score: 91,
+    },
+    {
+      id: "emp-3",
+      name: "Maeve Doyle",
+      email: "maeve@riverbank.ie",
+      role: "Leadership",
+      assignedModules: ["foundation", "board"],
+      completedModules: ["foundation"],
+      score: 77,
+    },
+    {
+      id: "emp-4",
+      name: "Luca Byrne",
+      email: "luca@riverbank.ie",
+      role: "General",
+      assignedModules: ["foundation"],
+      completedModules: [],
+      score: 0,
+    },
+  ],
+  register: [
+    {
+      id: "tool-1",
+      toolName: "ChatGPT Team",
+      ownerRole: "HR",
+      useCase: "Drafting staff letters and internal policies",
+      risk: "High",
+      data: "Personal",
+      employees: ["emp-1", "emp-3"],
+    },
+    {
+      id: "tool-2",
+      toolName: "Microsoft Copilot",
+      ownerRole: "General",
+      useCase: "Email summaries and document search",
+      risk: "Limited",
+      data: "Internal",
+      employees: ["emp-2", "emp-4"],
+    },
+    {
+      id: "tool-3",
+      toolName: "Canva AI",
+      ownerRole: "Marketing",
+      useCase: "Campaign copy and image generation",
+      risk: "Minimal",
+      data: "Public",
+      employees: ["emp-2"],
+    },
+  ],
+}
 
-const evidenceItems = [
-  "AI literacy policy with scope, owners, and review cadence",
-  "AI use register mapped to tools, roles, data, and risk tier",
-  "Time-stamped training logs with curriculum version history",
-  "Completion certificates with QR verification",
-  "One-click compliance pack for regulator, tribunal, or solicitor requests",
-]
+const emptyEmployeeForm = {
+  name: "",
+  email: "",
+  role: "General" as RoleCategory,
+}
+
+const emptyRegisterForm = {
+  toolName: "",
+  useCase: "",
+  ownerRole: "General" as RoleCategory,
+  risk: "Limited" as RiskCategory,
+  data: "Internal" as DataSensitivity,
+}
 
 export default function Home() {
-  const [selectedTools, setSelectedTools] = useState(["chatgpt", "copilot", "cv"])
-  const [staffCount, setStaffCount] = useState("18")
+  const [workspace, setWorkspace] = useState<WorkspaceState>(() => readStoredWorkspace())
+  const [activeView, setActiveView] = useState<ViewKey>("overview")
+  const [employeeForm, setEmployeeForm] = useState(emptyEmployeeForm)
+  const [registerForm, setRegisterForm] = useState(emptyRegisterForm)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(
+    () => readStoredWorkspace().employees[0]?.id ?? ""
+  )
+  const [selectedRegisterEmployees, setSelectedRegisterEmployees] = useState<string[]>([])
+  const [search, setSearch] = useState("")
 
-  const riskScore = useMemo(() => {
-    const toolRisk = toolOptions
-      .filter((tool) => selectedTools.includes(tool.id))
-      .reduce((total, tool) => total + tool.risk, 0)
-    const staffRisk = Math.min(Number(staffCount || 0) * 0.9, 22)
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
 
-    return Math.min(Math.round(toolRisk + staffRisk), 96)
-  }, [selectedTools, staffCount])
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace))
+  }, [workspace])
 
-  const riskTier =
-    riskScore >= 70 ? "Attention required" : riskScore >= 42 ? "Evidence gap" : "Low exposure"
+  const totalAssignments = workspace.employees.reduce(
+    (total, employee) => total + employee.assignedModules.length,
+    0
+  )
+  const totalCompletions = workspace.employees.reduce(
+    (total, employee) => total + employee.completedModules.length,
+    0
+  )
+  const trainingCompletionRate =
+    totalAssignments === 0 ? 0 : Math.round((totalCompletions / totalAssignments) * 100)
+  const registerCoverageRate =
+    workspace.register.length === 0
+      ? 0
+      : Math.round(
+          (workspace.register.filter((item) => item.employees.length > 0).length /
+            workspace.register.length) *
+            100
+        )
+  const leadershipCovered = workspace.employees
+    .filter((employee) => employee.role === "Leadership")
+    .every((employee) => employee.completedModules.includes("board"))
+  const policyCurrent = workspace.policyVersion.trim().length > 0 && workspace.reviewDate.length > 0
+  const readinessScore = Math.round(
+    trainingCompletionRate * 0.45 +
+      registerCoverageRate * 0.3 +
+      (leadershipCovered ? 15 : 0) +
+      (policyCurrent ? 10 : 0)
+  )
 
-  function toggleTool(id: string) {
-    setSelectedTools((current) =>
-      current.includes(id) ? current.filter((tool) => tool !== id) : [...current, id]
+  const readinessLabel =
+    readinessScore >= 80 ? "Audit-ready" : readinessScore >= 60 ? "Close gap" : "Action needed"
+
+  const filteredEmployees = workspace.employees.filter((employee) => {
+    const haystack = `${employee.name} ${employee.email} ${employee.role}`.toLowerCase()
+    return haystack.includes(search.toLowerCase())
+  })
+
+  const selectedEmployee =
+    workspace.employees.find((employee) => employee.id === selectedEmployeeId) ?? workspace.employees[0]
+
+  function setCompanyField<K extends keyof WorkspaceState>(field: K, value: WorkspaceState[K]) {
+    setWorkspace((current) => ({ ...current, [field]: value }))
+  }
+
+  function addEmployee() {
+    if (!employeeForm.name.trim() || !employeeForm.email.trim()) {
+      return
+    }
+
+    const assignedModules = moduleDefinitions
+      .filter(
+        (module) => module.audience === "All" || module.audience === employeeForm.role
+      )
+      .map((module) => module.id)
+
+    const newEmployee: Employee = {
+      id: createId("emp"),
+      name: employeeForm.name.trim(),
+      email: employeeForm.email.trim(),
+      role: employeeForm.role,
+      assignedModules,
+      completedModules: [],
+      score: 0,
+    }
+
+    setWorkspace((current) => ({
+      ...current,
+      employees: [...current.employees, newEmployee],
+    }))
+    setSelectedEmployeeId(newEmployee.id)
+    setEmployeeForm(emptyEmployeeForm)
+  }
+
+  function addRegisterItem() {
+    if (!registerForm.toolName.trim() || !registerForm.useCase.trim()) {
+      return
+    }
+
+    const newItem: RegisterItem = {
+      id: createId("tool"),
+      toolName: registerForm.toolName.trim(),
+      ownerRole: registerForm.ownerRole,
+      useCase: registerForm.useCase.trim(),
+      risk: registerForm.risk,
+      data: registerForm.data,
+      employees: selectedRegisterEmployees,
+    }
+
+    setWorkspace((current) => ({
+      ...current,
+      register: [...current.register, newItem],
+    }))
+    setRegisterForm(emptyRegisterForm)
+    setSelectedRegisterEmployees([])
+  }
+
+  function toggleModuleCompletion(employeeId: string, moduleId: string) {
+    setWorkspace((current) => ({
+      ...current,
+      employees: current.employees.map((employee) => {
+        if (employee.id !== employeeId) {
+          return employee
+        }
+
+        const completedModules = employee.completedModules.includes(moduleId)
+          ? employee.completedModules.filter((item) => item !== moduleId)
+          : [...employee.completedModules, moduleId]
+
+        const score =
+          completedModules.length === 0
+            ? 0
+            : 70 + Math.round((completedModules.length / employee.assignedModules.length) * 25)
+
+        return {
+          ...employee,
+          completedModules,
+          score,
+        }
+      }),
+    }))
+  }
+
+  function toggleRegisterEmployee(employeeId: string) {
+    setSelectedRegisterEmployees((current) =>
+      current.includes(employeeId)
+        ? current.filter((item) => item !== employeeId)
+        : [...current, employeeId]
     )
+  }
+
+  function exportCompliancePack() {
+    const content = buildCompliancePack(workspace, {
+      readinessScore,
+      readinessLabel,
+      trainingCompletionRate,
+      registerCoverageRate,
+      leadershipCovered,
+    })
+
+    const file = new Blob([content], { type: "text/markdown;charset=utf-8" })
+    const url = URL.createObjectURL(file)
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = `${slugify(workspace.companyName)}-article-4-compliance-pack.md`
+    anchor.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
     <main className="min-h-dvh bg-background text-foreground">
-      <SiteNav />
-
-      {/* Stat-Led hero — the exposure score is the figure, the words complete it. */}
-      <section
-        id="top"
-        className="mx-auto w-[min(94%,72rem)] pb-6 pt-10 lg:pb-10 lg:pt-16"
-      >
-        <div className="flex flex-col gap-2">
-          <span className="tnum text-xs uppercase tracking-[0.18em] text-muted-foreground">
-            Article 4 · AI literacy evidence for Irish employers
-          </span>
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-10 lg:mt-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-12">
-          <div className="flex min-w-0 flex-col gap-8">
-            <div className="flex flex-col gap-6">
-              <h1 className="display-wrap font-display text-[clamp(2.75rem,5vw+1rem,4.75rem)] font-semibold leading-[1.02]">
-                Audit-ready AI compliance, not another course library.
-              </h1>
-              <p className="max-w-[62ch] text-base leading-7 text-muted-foreground md:text-lg">
-                AIFirst turns AI literacy training, tool inventory, role mapping, and policy records
-                into one defensible Article 4 compliance pack for Irish SMEs.
-              </p>
+      <header className="border-b bg-background/92 backdrop-blur">
+        <div className="mx-auto flex w-[min(96%,88rem)] items-center justify-between gap-4 py-4">
+          <div className="flex items-center gap-3">
+            <div className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground">
+              <ShieldCheck aria-hidden="true" />
             </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Button className="h-10 rounded-full px-5" size="lg">
-                Run risk check
-                <Gauge data-icon="inline-end" aria-hidden="true" />
-              </Button>
-              <Button className="h-10 rounded-full px-5" size="lg" variant="outline">
-                View audit pack
-                <Download data-icon="inline-end" aria-hidden="true" />
-              </Button>
+            <div>
+              <p className="font-display text-lg font-semibold">AIFirst Workspace</p>
+              <p className="text-sm text-muted-foreground">Article 4 evidence, training, and register control</p>
             </div>
           </div>
 
-          <RiskCalculator
-            riskScore={riskScore}
-            riskTier={riskTier}
-            selectedTools={selectedTools}
-            staffCount={staffCount}
-            setStaffCount={setStaffCount}
-            toggleTool={toggleTool}
-          />
-        </div>
-
-        {/* Lead figure + supporting-stat row — the Stat-Led spine. */}
-        <div className="mt-10 hairline pt-8 lg:mt-14">
-          <div className="grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] md:items-end md:gap-12">
-            <div className="flex min-w-0 flex-col gap-3">
-              <p className="text-sm text-muted-foreground">Your live exposure, this calculator</p>
-              <StatFigure value={riskScore} />
-              <p className="max-w-[40ch] text-sm leading-6 text-muted-foreground">
-                Out of 96. The higher it climbs, the wider the Article 4 evidence gap a regulator or
-                tribunal could point to.
-              </p>
-            </div>
-            <div
-              className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border sm:grid-cols-3"
-              style={{ backgroundColor: "var(--color-rule)" }}
-            >
-              <MiniStat label="Article 4 applies" value="2 Feb 2025" />
-              <MiniStat label="Irish authorities live" value="2 Aug 2026" />
-              <MiniStat label="Non-compliance ceiling" value="EUR 15M / 3%" />
-            </div>
+          <div className="flex items-center gap-3">
+            <Badge variant={readinessScore >= 80 ? "default" : readinessScore >= 60 ? "secondary" : "destructive"}>
+              {readinessLabel}
+            </Badge>
+            <Button className="rounded-full" onClick={exportCompliancePack}>
+              Export pack
+              <Download data-icon="inline-end" aria-hidden="true" />
+            </Button>
           </div>
         </div>
-      </section>
+      </header>
 
-      <ProblemBand />
+      <div className="mx-auto grid w-[min(96%,88rem)] grid-cols-1 gap-6 py-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <aside className="flex flex-col gap-4 border-b pb-4 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              Company
+            </label>
+            <Input
+              value={workspace.companyName}
+              onChange={(event) => setCompanyField("companyName", event.target.value)}
+            />
+          </div>
 
-      <AuthoritiesSection />
+          <nav className="flex flex-col gap-1" aria-label="Workspace">
+            <SidebarButton
+              active={activeView === "overview"}
+              icon={Gauge}
+              label="Overview"
+              onClick={() => setActiveView("overview")}
+            />
+            <SidebarButton
+              active={activeView === "employees"}
+              icon={UsersRound}
+              label="Employees"
+              onClick={() => setActiveView("employees")}
+            />
+            <SidebarButton
+              active={activeView === "register"}
+              icon={BriefcaseBusiness}
+              label="AI register"
+              onClick={() => setActiveView("register")}
+            />
+            <SidebarButton
+              active={activeView === "training"}
+              icon={BookOpenCheck}
+              label="Training"
+              onClick={() => setActiveView("training")}
+            />
+            <SidebarButton
+              active={activeView === "vault"}
+              icon={FileText}
+              label="Compliance pack"
+              onClick={() => setActiveView("vault")}
+            />
+          </nav>
 
-      <ResourcesSection />
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle>Readiness score</CardTitle>
+              <CardDescription>Derived from training, register coverage, policy metadata, and board literacy.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <div className="flex items-end justify-between gap-3">
+                <span className="font-display text-5xl font-semibold tracking-tight">{readinessScore}</span>
+                <Badge variant="outline">{readinessLabel}</Badge>
+              </div>
+              <Progress value={readinessScore}>
+                <ProgressLabel className="sr-only">Readiness score</ProgressLabel>
+                <ProgressValue className="sr-only" />
+              </Progress>
+            </CardContent>
+          </Card>
+        </aside>
 
-      <LetterSection />
+        <div className="flex min-w-0 flex-col gap-6">
+          {activeView === "overview" ? (
+            <OverviewView
+              workspace={workspace}
+              readinessScore={readinessScore}
+              readinessLabel={readinessLabel}
+              trainingCompletionRate={trainingCompletionRate}
+              registerCoverageRate={registerCoverageRate}
+              leadershipCovered={leadershipCovered}
+              onExport={exportCompliancePack}
+              onOpenEmployees={() => setActiveView("employees")}
+              onOpenRegister={() => setActiveView("register")}
+            />
+          ) : null}
 
-      <VaultSection />
+          {activeView === "employees" ? (
+            <EmployeesView
+              employeeForm={employeeForm}
+              filteredEmployees={filteredEmployees}
+              search={search}
+              selectedEmployee={selectedEmployee}
+              setEmployeeForm={setEmployeeForm}
+              setSearch={setSearch}
+              addEmployee={addEmployee}
+              setSelectedEmployeeId={setSelectedEmployeeId}
+              toggleModuleCompletion={toggleModuleCompletion}
+            />
+          ) : null}
 
-      <TrainingSection />
+          {activeView === "register" ? (
+            <RegisterView
+              register={workspace.register}
+              employees={workspace.employees}
+              registerForm={registerForm}
+              selectedRegisterEmployees={selectedRegisterEmployees}
+              setRegisterForm={setRegisterForm}
+              toggleRegisterEmployee={toggleRegisterEmployee}
+              addRegisterItem={addRegisterItem}
+            />
+          ) : null}
 
-      <RegisterSection registerRows={registerRows} />
+          {activeView === "training" ? (
+            <TrainingView employees={workspace.employees} />
+          ) : null}
 
-      <PricingSection />
-
-      <ClosingCTA />
-
-      <SiteFooter />
+          {activeView === "vault" ? (
+            <VaultView
+              workspace={workspace}
+              readinessScore={readinessScore}
+              readinessLabel={readinessLabel}
+              trainingCompletionRate={trainingCompletionRate}
+              registerCoverageRate={registerCoverageRate}
+              leadershipCovered={leadershipCovered}
+              onExport={exportCompliancePack}
+              setCompanyField={setCompanyField}
+            />
+          ) : null}
+        </div>
+      </div>
     </main>
   )
 }
 
-function SiteNav() {
-  return (
-    <header className="sticky top-0 z-50 border-b bg-background/85 backdrop-blur">
-      <div className="mx-auto flex w-[min(94%,72rem)] items-center justify-between gap-3 py-3">
-        <a
-          className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold"
-          href="#top"
-        >
-          <span className="grid size-7 place-items-center rounded-md bg-primary text-primary-foreground">
-            <ShieldCheck aria-hidden="true" className="size-4" />
-          </span>
-          <span className="font-display tracking-tight">AIFirst</span>
-        </a>
-        <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
-          {[
-            ["Letter", "#letter"],
-            ["Authorities", "#authorities"],
-            ["Risk", "#risk"],
-            ["Vault", "#vault"],
-            ["Training", "#training"],
-            ["Pricing", "#pricing"],
-          ].map(([item, href]) => (
-            <a
-              className="focus-ring rounded-full px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-              href={href}
-              key={item}
-            >
-              {item}
-            </a>
-          ))}
-        </nav>
-        <Button className="rounded-full" size="lg">
-          Book demo
-          <ArrowRight data-icon="inline-end" aria-hidden="true" />
-        </Button>
-      </div>
-    </header>
-  )
-}
-
-function StatFigure({ value }: { value: number }) {
-  const displayedRef = useRef(0)
-  const [displayed, setDisplayed] = useState(value)
-  const frame = useRef<number | null>(null)
-  const prefersReduced = useRef(false)
-
-  useEffect(() => {
-    prefersReduced.current =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-  }, [])
-
-  useEffect(() => {
-    if (prefersReduced.current) {
-      setDisplayed(value)
-      displayedRef.current = value
-      return
-    }
-    const from = displayedRef.current
-    const to = value
-    if (from === to) return
-    const start = performance.now()
-    const duration = 480
-
-    function step(now: number) {
-      const t = Math.min((now - start) / duration, 1)
-      const eased = 1 - Math.pow(1 - t, 3)
-      const next = Math.round(from + (to - from) * eased)
-      setDisplayed(next)
-      if (t < 1) {
-        frame.current = requestAnimationFrame(step)
-      } else {
-        displayedRef.current = to
-      }
-    }
-
-    frame.current = requestAnimationFrame(step)
-    return () => {
-      if (frame.current) cancelAnimationFrame(frame.current)
-      displayedRef.current = to
-    }
-  }, [value])
-
-  return (
-    <div
-      className="tnum stat-figure font-semibold leading-[0.85] text-foreground"
-      style={{ fontSize: "var(--text-stat)" }}
-      aria-live="polite"
-    >
-      {String(displayed).padStart(2, "0")}
-    </div>
-  )
-}
-
-function RiskCalculator({
-  riskScore,
-  riskTier,
-  selectedTools,
-  staffCount,
-  setStaffCount,
-  toggleTool,
+function OverviewView({
+  workspace,
+  readinessScore,
+  readinessLabel,
+  trainingCompletionRate,
+  registerCoverageRate,
+  leadershipCovered,
+  onExport,
+  onOpenEmployees,
+  onOpenRegister,
 }: {
-  riskScore: number
-  riskTier: string
-  selectedTools: string[]
-  staffCount: string
-  setStaffCount: (value: string) => void
-  toggleTool: (id: string) => void
+  workspace: WorkspaceState
+  readinessScore: number
+  readinessLabel: string
+  trainingCompletionRate: number
+  registerCoverageRate: number
+  leadershipCovered: boolean
+  onExport: () => void
+  onOpenEmployees: () => void
+  onOpenRegister: () => void
 }) {
   return (
-    <Card className="shadow-sm">
-      <CardHeader className="border-b">
-        <CardTitle className="font-display text-lg tracking-tight">
-          Irish SME AI Risk Calculator
-        </CardTitle>
-        <CardDescription>
-          Lead magnet preview for hidden Article 4 evidence gaps.
-        </CardDescription>
-        <CardAction>
-          <Badge variant={riskScore >= 70 ? "destructive" : "secondary"}>{riskTier}</Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
-        <div className="rounded-lg bg-secondary p-4">
-          <div className="mb-3 flex items-end justify-between gap-3">
-            <div>
-              <p className="text-sm text-muted-foreground">Current exposure</p>
-              <p className="tnum text-4xl font-semibold">{riskScore}</p>
-            </div>
-            <AlertTriangle className="text-destructive" aria-hidden="true" />
-          </div>
-          <Progress value={riskScore}>
-            <ProgressLabel className="sr-only">Risk score</ProgressLabel>
-            <ProgressValue className="sr-only" />
-          </Progress>
-        </div>
-
-        <label className="flex flex-col gap-2">
-          <span className="text-sm font-medium">Staff using AI</span>
-          <input
-            className="h-9 w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-1 text-base outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-55 md:text-sm"
-            inputMode="numeric"
-            min="1"
-            onChange={(event) => setStaffCount(event.target.value)}
-            type="number"
-            value={staffCount}
-          />
-          <span className="min-h-[1lh] text-sm text-muted-foreground">
-            Used to estimate training evidence volume and reminder load.
-          </span>
-        </label>
-
-        <div className="flex flex-col gap-3">
-          <p className="text-sm font-medium">AI tools in use</p>
-          {toolOptions.map((tool) => {
-            const checked = selectedTools.includes(tool.id)
-
-            return (
-              <button
-                className={cn(
-                  "focus-ring flex min-h-12 cursor-pointer items-start gap-3 rounded-lg border bg-card p-3 text-left transition-[background-color,border-color,transform] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55",
-                  checked ? "border-ring bg-secondary" : "hover:bg-secondary/70"
-                )}
-                key={tool.id}
-                onClick={() => toggleTool(tool.id)}
-                type="button"
-              >
-                <span
-                  className={cn(
-                    "mt-0.5 grid size-5 shrink-0 place-items-center rounded border",
-                    checked ? "border-primary bg-primary text-primary-foreground" : "border-input"
-                  )}
-                  aria-hidden="true"
-                >
-                  {checked ? <Check /> : null}
-                </span>
-                <ToolMark tool={tool} />
-                <span className="min-w-0">
-                  <span className="block font-medium">{tool.label}</span>
-                  <span className="block text-sm leading-6 text-muted-foreground">{tool.note}</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </CardContent>
-      <CardFooter className="justify-between gap-3">
-        <span className="text-sm text-muted-foreground">Output: policy, register, training plan</span>
-        <Button>
-          Email report
-          <Mail data-icon="inline-end" aria-hidden="true" />
-        </Button>
-      </CardFooter>
-    </Card>
-  )
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 bg-background p-4">
-      <p className="text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground">{label}</p>
-      <p className="tnum mt-1.5 text-sm font-semibold">{value}</p>
-    </div>
-  )
-}
-
-type Markable = {
-  brand?: ComponentType<{ size?: number; className?: string }>
-  fallback?: ComponentType<SVGProps<SVGSVGElement>>
-}
-
-function ToolMark({ tool, size = 18 }: { tool: Markable; size?: number }) {
-  if (tool.brand) {
-    const Brand = tool.brand
-    return (
-      <span className="grid shrink-0 place-items-center" aria-hidden="true">
-        <Brand size={size} />
-      </span>
-    )
-  }
-  if (tool.fallback) {
-    const Icon = tool.fallback
-    return (
-      <span
-        className="grid shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"
-        style={{ width: size, height: size }}
-        aria-hidden="true"
-      >
-        <Icon className="size-4" />
-      </span>
-    )
-  }
-  return null
-}
-
-function Signal({
-  icon: Icon,
-  title,
-  body,
-}: {
-  icon: ComponentType<SVGProps<SVGSVGElement>>
-  title: string
-  body: string
-}) {
-  return (
-    <div className="flex gap-3">
-      <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-md bg-accent-tint text-accent">
-        <Icon aria-hidden="true" className="size-4" />
-      </span>
-      <div className="min-w-0">
-        <h3 className="font-medium tracking-tight">{title}</h3>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">{body}</p>
-      </div>
-    </div>
-  )
-}
-
-function ProblemBand() {
-  return (
-    <section className="border-y bg-card/55">
-      <div className="mx-auto grid w-[min(94%,72rem)] grid-cols-1 gap-10 py-12 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:py-16">
-        <div className="flex min-w-0 flex-col gap-3">
-          <p className="text-sm font-medium text-muted-foreground">The business problem</p>
-          <h2 className="display-wrap font-display text-2xl font-semibold tracking-tight md:text-[2rem] md:leading-[1.1]">
-            When AI causes a workplace, data, or client issue, training evidence becomes the file.
-          </h2>
-        </div>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <Signal icon={Landmark} title="Regulatory requests" body="Policies, logs, and tool records ready to export." />
-          <Signal icon={UsersRound} title="Tribunal context" body="Role-specific training mapped to the AI system involved." />
-          <Signal icon={LockKeyhole} title="Data handling" body="Prompts, personal data, and confidential records classified." />
-          <Signal icon={BriefcaseBusiness} title="Staff readiness" body="Reminders and certificates tied to curriculum versions." />
-        </div>
-      </div>
-    </section>
-  )
-}
-
-const authorities = [
-  { mono: "DPC", name: "Data Protection Commission", role: "Personal data & AI input handling" },
-  { mono: "WRC", name: "Workplace Relations Commission", role: "Employment disputes & training evidence" },
-  { mono: "AI\u00A0Office", name: "Irish AI Office", role: "Article 4 enforcement from 2 Aug 2026" },
-  { mono: "CCPC", name: "Competition & Consumer Protection Commission", role: "Consumer-facing AI" },
-  { mono: "CRA", name: "Commission for Regulation of Utilities", role: "Sectoral AI deployment" },
-  { mono: "CIB", name: "Companies Investigation Branch", role: "Corporate governance & AI risk" },
-]
-
-function AuthoritiesSection() {
-  return (
-    <section id="authorities" className="mx-auto w-[min(94%,72rem)] py-16 md:py-20">
-      <div className="flex flex-col gap-10">
-        <div className="flex max-w-[52ch] flex-col gap-4">
-          <span className="text-sm font-medium text-muted-foreground">
-            Who comes asking for your records
-          </span>
-          <h2 className="display-wrap font-display text-3xl font-semibold tracking-tight md:text-[2.5rem] md:leading-[1.08]">
-            Fifteen Irish authorities gain enforcement powers on 2 August.
-          </h2>
-          <p className="text-base leading-7 text-muted-foreground">
-            Any of them can request your Article 4 training register and audit logs. These are the
-            ones most likely to knock on an SME&rsquo;s door.
-          </p>
-        </div>
-
-        <ul
-          className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border sm:grid-cols-3"
-          style={{ backgroundColor: "var(--color-rule)" }}
-        >
-          {authorities.map((a) => (
-            <li
-              className="flex min-w-0 flex-col gap-3 bg-background p-5"
-              key={a.mono}
-            >
-              <span
-                className="tnum grid size-11 shrink-0 place-items-center rounded-md border text-xs font-semibold tracking-tight text-foreground"
-                aria-hidden="true"
-              >
-                {a.mono}
-              </span>
-              <div className="flex min-w-0 flex-col gap-1">
-                <p className="text-sm font-medium leading-5 tracking-tight">{a.name}</p>
-                <p className="text-xs leading-5 text-muted-foreground">{a.role}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-
-        <p className="text-sm leading-6 text-muted-foreground">
-          Full list assigned under the Regulation of Artificial Intelligence Bill 2026, approved
-          17 June 2026.
-        </p>
-      </div>
-    </section>
-  )
-}
-
-function ResourcesSection() {
-  return (
-    <section id="resources" className="border-y bg-card/40">
-      <div className="mx-auto w-[min(94%,72rem)] py-14 md:py-20">
-        <div className="flex flex-col gap-8">
-          <div className="flex max-w-[48ch] flex-col gap-3">
-            <span className="text-sm font-medium text-muted-foreground">Official EU resources</span>
-            <h2 className="display-wrap font-display text-2xl font-semibold tracking-tight md:text-3xl">
-              Read the law your compliance pack is built on.
-            </h2>
-          </div>
-
-          <a
-            className="focus-ring group grid grid-cols-1 gap-6 rounded-xl border bg-background p-6 transition-[border-color,box-shadow] hover:border-accent/40 md:grid-cols-[minmax(0,1fr)_minmax(0,0.55fr)] md:p-8"
-            href="https://artificialintelligenceact.eu/ai-act-explorer/"
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            <div className="flex min-w-0 flex-col gap-4">
-              <div className="flex items-center gap-2">
-                <span className="font-display text-xl font-semibold tracking-tight text-accent group-hover:underline">
-                  AI Act Explorer
-                </span>
-                <ExternalLink
-                  aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground"
-                />
-              </div>
-              <p className="max-w-[56ch] text-sm leading-6 text-muted-foreground md:text-base md:leading-7">
-                Browse the full EU AI Act online — Official Journal version of 13 June 2024. Search
-                for the parts that apply to you, including{" "}
-                <span className="font-medium text-foreground">Article 4: AI literacy</span>, the
-                obligation AIFirst helps you meet.
-              </p>
-              <span className="text-sm font-medium text-accent">Open the explorer</span>
-            </div>
-            <div
-              className="flex min-h-[8rem] flex-col justify-between rounded-lg border bg-secondary/60 p-5"
-              aria-hidden="true"
-            >
-              <div className="flex items-center gap-2">
-                <span className="grid size-8 place-items-center rounded-md border bg-background text-xs font-semibold">
-                  EU
-                </span>
-                <span className="text-xs font-medium text-muted-foreground">Chapter I</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <p className="tnum text-xs text-muted-foreground">Art. 4</p>
-                <p className="font-display text-lg font-semibold tracking-tight">AI literacy</p>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Deployers must ensure sufficient AI literacy for staff using AI systems.
-                </p>
-              </div>
-            </div>
-          </a>
-
-          <p className="text-xs leading-5 text-muted-foreground">
-            Maintained by the Future of Life Institute. Not an official EU site — use alongside the{" "}
-            <a
-              className="focus-ring underline-offset-2 hover:text-foreground hover:underline"
-              href="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              Official Journal text
-            </a>
-            .
-          </p>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-const letterTimeline = [
-  {
-    date: "2 February 2025",
-    state: "Passed",
-    body: "Under Article 4 of the EU AI Act, \u201CAI Literacy\u201D became a binding legal obligation. Every company using AI is already legally required to ensure their staff are properly trained.",
-  },
-  {
-    date: "17 June 2026",
-    state: "Passed",
-    body: "The Irish Government approved the Regulation of Artificial Intelligence Bill 2026, assigning powers to fifteen local regulatory authorities (including the DPC and the WRC) to police this.",
-  },
-  {
-    date: "2 August 2026",
-    state: "37 days away",
-    body: "Compliance enforcement officially starts. Regulators gain the power to request your training registry and audit logs.",
-  },
-  {
-    date: "August 2026 onwards",
-    state: "Liability window",
-    body: "Lack of documented employee training becomes an immediate liability in any standard Workplace Relations Commission (WRC) or Data Protection Commission (DPC) hearing involving automated systems or employee mistakes.",
-  },
-]
-
-const letterNotes = [
-  {
-    title: "\u201CDeployer\u201D Status",
-    body: "If your employees use ChatGPT, Copilot, or Canva AI for work, the EU classifies your business as a \u201CDeployer\u201D of AI. This means the legal burden of how those tools are used on your network falls entirely on you.",
-  },
-  {
-    title: "The Real WRC Risk",
-    body: "If an employee uses an AI tool to assist with hiring, performance reviews, or client communication, and a dispute or discrimination claim arises, the first document the WRC or a court will demand is your Article 4 Training Register. If you cannot prove your employee was trained on the risks of that tool, your business faces strict liability.",
-  },
-  {
-    title: "Data Leakage Liability",
-    body: "Copying client data or proprietary company information into a commercial, public AI system is a breach of Irish data privacy laws. You must have a sign-off sheet proving your staff were explicitly instructed on what they can and cannot paste into these systems.",
-  },
-]
-
-const letterAssets = [
-  {
-    title: "The 30-Minute SME Foundation Course",
-    body: "A straightforward, video-based compliance module designed for Irish staff. It covers data protection rules, generative AI limits, and practical boundaries. Your staff can complete it on their lunch break on their phones.",
-  },
-  {
-    title: "Your Custom AI Use Policy",
-    body: "A downloadable, legally compliant document that formally establishes what tools are allowed in your office.",
-  },
-  {
-    title: "Your Live Audit Register",
-    body: "A clean, downloadable PDF report containing verified training certificates and tool registries \u2014 ready to be handed to a regulator, insurer, or solicitor on demand.",
-  },
-]
-
-function LetterSection() {
-  return (
-    <section id="letter" className="border-y bg-card/40">
-      <div className="mx-auto w-[min(94%,60rem)] py-16 md:py-24">
-        <article className="flex flex-col gap-10">
-          {/* Letterhead */}
-          <header className="flex flex-col gap-3">
-            <p className="tnum text-xs uppercase tracking-[0.18em] text-muted-foreground">
-              A letter to Irish business owners
-            </p>
-            <p className="text-sm text-muted-foreground">Date: 26 June 2026</p>
-            <h2 className="display-wrap font-display text-2xl font-semibold leading-[1.15] tracking-tight md:text-[2rem]">
-              The August 2nd deadline and what your business actually needs to do
-            </h2>
-          </header>
-
-          {/* Salutation + opening prose */}
-          <div className="flex flex-col gap-5 text-base leading-7 text-foreground/90">
-            <p>Dear Colleague,</p>
-            <p>
-              If you are like most business owners in Ireland right now, you are probably tired of
-              hearing about AI. Every software tool you pay for has added an &ldquo;AI
-              assistant&rdquo; over the past year, and your team is almost certainly using these
-              tools&mdash;whether to draft client emails, summarize slide decks, or review code.
-            </p>
-            <p>
-              But there is a quiet, regulatory deadline approaching that has nothing to do with
-              technology hype, and everything to do with protecting your business from legal
-              liability.
-            </p>
-            <p>
-              In exactly 37 days, on August 2nd, 2026, the Irish AI Office becomes officially
-              active, and the enforcement phase of the EU AI Act begins.
-            </p>
-          </div>
-
-          {/* The Critical Dates */}
-          <div className="flex flex-col gap-5">
-            <h3 className="font-display text-xl font-semibold tracking-tight">The Critical Dates</h3>
-            <p className="text-base leading-7 text-muted-foreground">
-              These are the dates that matter to your balance sheet:
-            </p>
-            <ol className="flex flex-col gap-px overflow-hidden rounded-lg border" style={{ backgroundColor: "var(--color-rule)" }}>
-              {letterTimeline.map((row) => (
-                <li
-                  className="grid grid-cols-1 gap-2 bg-background p-5 sm:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)] sm:gap-6"
-                  key={row.date}
-                >
-                  <div className="flex flex-col gap-1">
-                    <p className="tnum text-sm font-semibold">{row.date}</p>
-                    <Badge className="w-fit" variant="secondary">
-                      {row.state}
-                    </Badge>
-                  </div>
-                  <p className="text-sm leading-6 text-muted-foreground">{row.body}</p>
-                </li>
-              ))}
-            </ol>
-          </div>
-
-          {/* Compliance Notes */}
-          <div className="flex flex-col gap-5">
-            <h3 className="font-display text-xl font-semibold tracking-tight">
-              The Compliance Notes
-            </h3>
-            <p className="text-base leading-7 text-muted-foreground">
-              You do not need to rewrite your entire operations, but you do need to cover three
-              basic vulnerabilities before August:
-            </p>
-            <div className="flex flex-col gap-6">
-              {letterNotes.map((note) => (
-                <div className="flex flex-col gap-2" key={note.title}>
-                  <p className="font-medium tracking-tight">{note.title}</p>
-                  <p className="text-sm leading-6 text-muted-foreground">{note.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Resolution */}
-          <div className="flex flex-col gap-5">
-            <h3 className="font-display text-xl font-semibold tracking-tight">
-              How AIFirst Resolves This in 30 Minutes
-            </h3>
-            <div className="flex flex-col gap-5 text-base leading-7 text-foreground/90">
-              <p>
-                We built AIFirst to be as simple and low-friction as possible. We do not sell
-                complex enterprise software or endless video courses.
-              </p>
-              <p>
-                For a single, transparent charge of &euro;199, we provide you with three exact
-                assets to secure your business:
-              </p>
-            </div>
-            <ol className="flex flex-col gap-px overflow-hidden rounded-lg border" style={{ backgroundColor: "var(--color-rule)" }}>
-              {letterAssets.map((asset, index) => (
-                <li className="flex flex-col gap-2 bg-background p-5 sm:flex-row sm:gap-5" key={asset.title}>
-                  <span
-                    className="tnum grid size-7 shrink-0 place-items-center rounded-md bg-accent-tint text-sm font-semibold text-accent"
-                    aria-hidden="true"
-                  >
-                    {index + 1}
-                  </span>
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <p className="font-medium tracking-tight">{asset.title}</p>
-                    <p className="text-sm leading-6 text-muted-foreground">{asset.body}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-            <p className="text-base leading-7 text-foreground/90">
-              No long-term commitments, no complex setups. Just compliance, handled.
-            </p>
-          </div>
-
-          {/* Sign-off + CTA */}
-          <div className="flex flex-col gap-6 border-t pt-8">
-            <div className="flex flex-col gap-1 text-base leading-7 text-foreground/90">
-              <p>To secure your compliance pack and train your first 10 employees, click below.</p>
-            </div>
-            <Button className="h-11 w-fit rounded-full px-6 text-base" size="lg">
-              Generate Your Article 4 Compliance Pack &mdash; &euro;199
-              <ArrowRight data-icon="inline-end" aria-hidden="true" />
-            </Button>
-            <div className="flex flex-col gap-1">
-              <p className="text-sm text-muted-foreground">Yours sincerely,</p>
-              <p className="font-medium tracking-tight">The AIFirst Team</p>
-              <p className="text-sm text-muted-foreground">Dublin, Ireland</p>
-            </div>
-          </div>
-        </article>
-      </div>
-    </section>
-  )
-}
-
-function VaultSection() {
-  return (
-    <section id="vault" className="mx-auto w-[min(94%,72rem)] py-16 md:py-24">
-      <div className="grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <div className="flex min-w-0 flex-col gap-6">
-          <span className="text-sm font-medium text-muted-foreground">Compliance Vault</span>
-          <h2 className="display-wrap font-display text-3xl font-semibold tracking-tight md:text-[2.75rem] md:leading-[1.05]">
-            One export for the WRC, DPC, sector regulator, or a solicitor letter.
-          </h2>
-          <p className="max-w-[64ch] text-base leading-7 text-muted-foreground">
-            The vault compiles the documents a business should be able to produce: policy,
-            register, staff training logs, role mappings, certificates, and refresh evidence.
-          </p>
+    <>
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Badge className="w-fit" variant="outline">
+            Working MVP
+          </Badge>
           <div className="flex flex-col gap-3">
-            {evidenceItems.map((item) => (
-              <div className="flex items-start gap-3" key={item}>
-                <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-accent-tint text-accent">
-                  <Check aria-hidden="true" className="size-3" />
-                </span>
-                <p className="text-sm leading-6 text-muted-foreground">{item}</p>
-              </div>
-            ))}
+            <h1 className="font-display text-[clamp(2.25rem,3vw+1rem,4rem)] font-semibold leading-[1.02] tracking-tight">
+              Control the AI register, assign training, and export evidence.
+            </h1>
+            <p className="max-w-[65ch] text-base leading-7 text-muted-foreground">
+              This workspace tracks who uses which AI tools, what data they touch, which modules they
+              must complete, and whether your company could answer an Article 4 evidence request today.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button onClick={onExport}>
+              Download compliance pack
+              <Download data-icon="inline-end" aria-hidden="true" />
+            </Button>
+            <Button variant="outline" onClick={onOpenEmployees}>
+              Review training gaps
+              <ChevronRight data-icon="inline-end" aria-hidden="true" />
+            </Button>
           </div>
         </div>
 
-        <Card className="shadow-sm">
+        <Card>
           <CardHeader className="border-b">
-            <CardTitle className="font-display text-lg tracking-tight">
-              Article 4 Compliance Package
-            </CardTitle>
-            <CardDescription>Generated for Riverbank Hospitality Ltd.</CardDescription>
+            <CardTitle>{workspace.companyName}</CardTitle>
+            <CardDescription>Current readiness derived from live workspace data.</CardDescription>
             <CardAction>
-              <Badge>Ready</Badge>
+              <Badge variant={readinessScore >= 80 ? "default" : readinessScore >= 60 ? "secondary" : "destructive"}>
+                {readinessLabel}
+              </Badge>
             </CardAction>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-3">
-              <VaultTile icon={FileCheck2} label="Policy" value="Version 1.4" />
-              <VaultTile icon={ClipboardList} label="AI register" value="4 tools logged" />
-              <VaultTile icon={BookOpenCheck} label="Training" value="14 of 18 complete" />
-              <VaultTile icon={BadgeCheck} label="Certificates" value="QR verified" />
+          <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <MetricCard icon={UsersRound} label="Employees" value={String(workspace.employees.length)} />
+            <MetricCard icon={BriefcaseBusiness} label="AI tools" value={String(workspace.register.length)} />
+            <MetricCard icon={BookOpenCheck} label="Training" value={`${trainingCompletionRate}%`} />
+            <MetricCard icon={ShieldCheck} label="Readiness" value={`${readinessScore}/100`} />
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Training coverage</CardTitle>
+            <CardDescription>Assigned module completion across the workspace.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex items-end justify-between">
+              <span className="font-display text-4xl font-semibold">{trainingCompletionRate}%</span>
+              <BookOpenCheck className="text-primary" aria-hidden="true" />
             </div>
-            <Separator />
-            <div className="flex flex-col gap-3 rounded-lg bg-secondary p-4">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium">Export coverage</span>
-                <span className="tnum text-sm">78%</span>
-              </div>
-              <Progress value={78}>
-                <ProgressLabel className="sr-only">Export coverage</ProgressLabel>
-                <ProgressValue className="sr-only" />
-              </Progress>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Missing items: HR module completions and one data sensitivity review.
-              </p>
+            <Progress value={trainingCompletionRate}>
+              <ProgressLabel className="sr-only">Training coverage</ProgressLabel>
+              <ProgressValue className="sr-only" />
+            </Progress>
+          </CardContent>
+          <CardFooter>
+            <button className="text-sm text-muted-foreground hover:text-foreground" onClick={onOpenEmployees} type="button">
+              Open employee tracking
+            </button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Register coverage</CardTitle>
+            <CardDescription>Tools mapped to named employees and use cases.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex items-end justify-between">
+              <span className="font-display text-4xl font-semibold">{registerCoverageRate}%</span>
+              <BriefcaseBusiness className="text-primary" aria-hidden="true" />
+            </div>
+            <Progress value={registerCoverageRate}>
+              <ProgressLabel className="sr-only">Register coverage</ProgressLabel>
+              <ProgressValue className="sr-only" />
+            </Progress>
+          </CardContent>
+          <CardFooter>
+            <button className="text-sm text-muted-foreground hover:text-foreground" onClick={onOpenRegister} type="button">
+              Open AI register
+            </button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Board literacy</CardTitle>
+            <CardDescription>Leadership oversight and briefing coverage.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex items-end justify-between">
+              <span className="font-display text-4xl font-semibold">
+                {leadershipCovered ? "Covered" : "Pending"}
+              </span>
+              {leadershipCovered ? (
+                <BadgeCheck className="text-[var(--color-success)]" aria-hidden="true" />
+              ) : (
+                <AlertTriangle className="text-[var(--color-warning)]" aria-hidden="true" />
+              )}
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">
+              Board members need enough literacy to exercise meaningful oversight on deployed AI systems.
+            </p>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Immediate gaps</CardTitle>
+            <CardDescription>The next items keeping this workspace from an audit-ready state.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <GapRow
+              label="Unfinished assigned modules"
+              value={String(
+                workspace.employees.reduce(
+                  (count, employee) => count + employee.assignedModules.length - employee.completedModules.length,
+                  0
+                )
+              )}
+            />
+            <GapRow
+              label="High-risk register items"
+              value={String(workspace.register.filter((item) => item.risk === "High").length)}
+            />
+            <GapRow
+              label="Employees without any completion"
+              value={String(workspace.employees.filter((employee) => employee.completedModules.length === 0).length)}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Evidence generated here</CardTitle>
+            <CardDescription>What the current export will include.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <EvidenceTile icon={FileText} label="Policy metadata" />
+            <EvidenceTile icon={BriefcaseBusiness} label="AI tool register" />
+            <EvidenceTile icon={ClipboardCheck} label="Training logs" />
+            <EvidenceTile icon={Landmark} label="Leadership oversight record" />
+          </CardContent>
+        </Card>
+      </section>
+    </>
+  )
+}
+
+function EmployeesView({
+  employeeForm,
+  filteredEmployees,
+  search,
+  selectedEmployee,
+  setEmployeeForm,
+  setSearch,
+  addEmployee,
+  setSelectedEmployeeId,
+  toggleModuleCompletion,
+}: {
+  employeeForm: typeof emptyEmployeeForm
+  filteredEmployees: Employee[]
+  search: string
+  selectedEmployee?: Employee
+  setEmployeeForm: Dispatch<SetStateAction<typeof emptyEmployeeForm>>
+  setSearch: Dispatch<SetStateAction<string>>
+  addEmployee: () => void
+  setSelectedEmployeeId: (employeeId: string) => void
+  toggleModuleCompletion: (employeeId: string, moduleId: string) => void
+}) {
+  return (
+    <>
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Add employee</CardTitle>
+            <CardDescription>Assign role-based modules immediately on creation.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Input
+              placeholder="Full name"
+              value={employeeForm.name}
+              onChange={(event) =>
+                setEmployeeForm((current) => ({ ...current, name: event.target.value }))
+              }
+            />
+            <Input
+              placeholder="Email address"
+              value={employeeForm.email}
+              onChange={(event) =>
+                setEmployeeForm((current) => ({ ...current, email: event.target.value }))
+              }
+            />
+            <select
+              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              value={employeeForm.role}
+              onChange={(event) =>
+                setEmployeeForm((current) => ({
+                  ...current,
+                  role: event.target.value as RoleCategory,
+                }))
+              }
+            >
+              {(["General", "HR", "Marketing", "Leadership", "Legal"] as RoleCategory[]).map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+          </CardContent>
+          <CardFooter className="justify-between gap-3">
+            <span className="text-sm text-muted-foreground">Foundation is assigned automatically.</span>
+            <Button onClick={addEmployee}>
+              Add employee
+              <Plus data-icon="inline-end" aria-hidden="true" />
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Employee register</CardTitle>
+            <CardDescription>Search and select a person to update their literacy record.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Input placeholder="Search employees" value={search} onChange={(event) => setSearch(event.target.value)} />
+            <div className="grid gap-2">
+              {filteredEmployees.map((employee) => {
+                const completion = employee.assignedModules.length === 0
+                  ? 0
+                  : Math.round((employee.completedModules.length / employee.assignedModules.length) * 100)
+
+                return (
+                  <button
+                    key={employee.id}
+                    type="button"
+                    className={cn(
+                      "focus-ring flex items-center justify-between rounded-lg border px-3 py-3 text-left transition-[background-color,border-color,color]",
+                      selectedEmployee?.id === employee.id ? "border-ring bg-secondary" : "hover:bg-secondary/50"
+                    )}
+                    onClick={() => setSelectedEmployeeId(employee.id)}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium">{employee.name}</p>
+                      <p className="truncate text-sm text-muted-foreground">{employee.email}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline">{employee.role}</Badge>
+                      <span className="font-display text-lg font-semibold">{completion}%</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {selectedEmployee ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{selectedEmployee.name}</CardTitle>
+            <CardDescription>
+              Mark modules complete to update the employee’s evidence record.
+            </CardDescription>
+            <CardAction>
+              <Badge variant="secondary">{selectedEmployee.role}</Badge>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {moduleDefinitions
+              .filter((module) => selectedEmployee.assignedModules.includes(module.id))
+              .map((module) => {
+                const completed = selectedEmployee.completedModules.includes(module.id)
+
+                return (
+                  <button
+                    key={module.id}
+                    type="button"
+                    className={cn(
+                      "focus-ring flex flex-col gap-3 rounded-lg border p-4 text-left transition-[background-color,border-color,color]",
+                      completed ? "border-[var(--color-success)] bg-[color-mix(in_oklch,var(--color-success),white_92%)]" : "hover:bg-secondary/55"
+                    )}
+                    onClick={() => toggleModuleCompletion(selectedEmployee.id, module.id)}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{module.title}</p>
+                        <p className="text-sm text-muted-foreground">{module.duration}</p>
+                      </div>
+                      <Badge variant={completed ? "default" : "outline"}>
+                        {completed ? "Complete" : "Pending"}
+                      </Badge>
+                    </div>
+                    <div className="grid gap-1">
+                      {module.outcomes.map((outcome) => (
+                        <p key={outcome} className="text-sm leading-6 text-muted-foreground">
+                          {outcome}
+                        </p>
+                      ))}
+                    </div>
+                  </button>
+                )
+              })}
+          </CardContent>
+        </Card>
+      ) : null}
+    </>
+  )
+}
+
+function RegisterView({
+  register,
+  employees,
+  registerForm,
+  selectedRegisterEmployees,
+  setRegisterForm,
+  toggleRegisterEmployee,
+  addRegisterItem,
+}: {
+  register: RegisterItem[]
+  employees: Employee[]
+  registerForm: typeof emptyRegisterForm
+  selectedRegisterEmployees: string[]
+  setRegisterForm: Dispatch<SetStateAction<typeof emptyRegisterForm>>
+  toggleRegisterEmployee: (employeeId: string) => void
+  addRegisterItem: () => void
+}) {
+  return (
+    <>
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Register AI tool</CardTitle>
+            <CardDescription>Capture use case, data sensitivity, owner role, and affected staff.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Input
+              placeholder="Tool name"
+              value={registerForm.toolName}
+              onChange={(event) =>
+                setRegisterForm((current) => ({ ...current, toolName: event.target.value }))
+              }
+            />
+            <textarea
+              className="min-h-24 rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              placeholder="Primary use case"
+              value={registerForm.useCase}
+              onChange={(event) =>
+                setRegisterForm((current) => ({ ...current, useCase: event.target.value }))
+              }
+            />
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <select
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                value={registerForm.ownerRole}
+                onChange={(event) =>
+                  setRegisterForm((current) => ({
+                    ...current,
+                    ownerRole: event.target.value as RoleCategory,
+                  }))
+                }
+              >
+                {(["General", "HR", "Marketing", "Leadership", "Legal"] as RoleCategory[]).map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                value={registerForm.risk}
+                onChange={(event) =>
+                  setRegisterForm((current) => ({
+                    ...current,
+                    risk: event.target.value as RiskCategory,
+                  }))
+                }
+              >
+                {(["Minimal", "Limited", "High"] as RiskCategory[]).map((risk) => (
+                  <option key={risk} value={risk}>
+                    {risk}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                value={registerForm.data}
+                onChange={(event) =>
+                  setRegisterForm((current) => ({
+                    ...current,
+                    data: event.target.value as DataSensitivity,
+                  }))
+                }
+              >
+                {(["Public", "Internal", "Personal", "Special category"] as DataSensitivity[]).map((data) => (
+                  <option key={data} value={data}>
+                    {data}
+                  </option>
+                ))}
+              </select>
             </div>
           </CardContent>
           <CardFooter className="justify-between gap-3">
-            <span className="text-sm text-muted-foreground">Last generated: 26 June 2026</span>
-            <Button variant="outline">
-              Download
+            <span className="text-sm text-muted-foreground">
+              Assign the people affected below before saving.
+            </span>
+            <Button onClick={addRegisterItem}>
+              Save tool
+              <Plus data-icon="inline-end" aria-hidden="true" />
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Assign affected staff</CardTitle>
+            <CardDescription>Map the tool to named employees for audit evidence.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            {employees.map((employee) => {
+              const active = selectedRegisterEmployees.includes(employee.id)
+
+              return (
+                <button
+                  key={employee.id}
+                  type="button"
+                  onClick={() => toggleRegisterEmployee(employee.id)}
+                  className={cn(
+                    "focus-ring flex items-center justify-between rounded-lg border px-3 py-3 text-left transition-[background-color,border-color]",
+                    active ? "border-ring bg-secondary" : "hover:bg-secondary/50"
+                  )}
+                >
+                  <div>
+                    <p className="font-medium">{employee.name}</p>
+                    <p className="text-sm text-muted-foreground">{employee.role}</p>
+                  </div>
+                  <Badge variant={active ? "default" : "outline"}>{active ? "Included" : "Optional"}</Badge>
+                </button>
+              )
+            })}
+          </CardContent>
+        </Card>
+      </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Current AI register</CardTitle>
+          <CardDescription>Live list of systems, risks, data classes, and mapped staff.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {register.map((item) => (
+            <div key={item.id} className="grid grid-cols-1 gap-3 rounded-lg border p-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]">
+              <div className="min-w-0">
+                <p className="font-medium">{item.toolName}</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.useCase}</p>
+              </div>
+              <div className="flex flex-wrap items-start gap-2">
+                <Badge variant="outline">{item.ownerRole}</Badge>
+                <Badge variant="outline">{item.data}</Badge>
+                <Badge variant={item.risk === "High" ? "destructive" : item.risk === "Limited" ? "secondary" : "outline"}>
+                  {item.risk}
+                </Badge>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {item.employees.length} mapped employee{item.employees.length === 1 ? "" : "s"}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </>
+  )
+}
+
+function TrainingView({ employees }: { employees: Employee[] }) {
+  return (
+    <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <Card>
+        <CardHeader>
+          <CardTitle>Module coverage</CardTitle>
+          <CardDescription>Completion counts by module across the current workspace.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {moduleDefinitions.map((module) => {
+            const assignedEmployees = employees.filter((employee) =>
+              employee.assignedModules.includes(module.id)
+            )
+            const completedCount = assignedEmployees.filter((employee) =>
+              employee.completedModules.includes(module.id)
+            ).length
+            const coverage =
+              assignedEmployees.length === 0
+                ? 0
+                : Math.round((completedCount / assignedEmployees.length) * 100)
+
+            return (
+              <div key={module.id} className="rounded-lg border p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{module.title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {module.audience === "All" ? "All employees" : `${module.audience} audience`} · {module.duration}
+                    </p>
+                  </div>
+                  <span className="font-display text-2xl font-semibold">{coverage}%</span>
+                </div>
+                <Progress className="mt-4" value={coverage}>
+                  <ProgressLabel className="sr-only">{module.title}</ProgressLabel>
+                  <ProgressValue className="sr-only" />
+                </Progress>
+              </div>
+            )
+          })}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Lowest coverage employees</CardTitle>
+          <CardDescription>People most likely to weaken the evidence file today.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {[...employees]
+            .sort(
+              (left, right) =>
+                left.completedModules.length / left.assignedModules.length -
+                right.completedModules.length / right.assignedModules.length
+            )
+            .slice(0, 5)
+            .map((employee) => {
+              const outstanding = employee.assignedModules.filter(
+                (module) => !employee.completedModules.includes(module)
+              )
+
+              return (
+                <div key={employee.id} className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{employee.name}</p>
+                      <p className="text-sm text-muted-foreground">{employee.role}</p>
+                    </div>
+                    <Badge variant={outstanding.length === 0 ? "default" : "secondary"}>
+                      {outstanding.length === 0 ? "Clear" : `${outstanding.length} open`}
+                    </Badge>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                    Outstanding modules:{" "}
+                    {outstanding
+                      .map((moduleId) => moduleDefinitions.find((module) => module.id === moduleId)?.title)
+                      .filter(Boolean)
+                      .join(", ") || "None"}
+                  </p>
+                </div>
+              )
+            })}
+        </CardContent>
+      </Card>
+    </section>
+  )
+}
+
+function VaultView({
+  workspace,
+  readinessScore,
+  readinessLabel,
+  trainingCompletionRate,
+  registerCoverageRate,
+  leadershipCovered,
+  onExport,
+  setCompanyField,
+}: {
+  workspace: WorkspaceState
+  readinessScore: number
+  readinessLabel: string
+  trainingCompletionRate: number
+  registerCoverageRate: number
+  leadershipCovered: boolean
+  onExport: () => void
+  setCompanyField: <K extends keyof WorkspaceState>(field: K, value: WorkspaceState[K]) => void
+}) {
+  const reportSections = [
+    {
+      label: "Policy metadata",
+      body: `Version ${workspace.policyVersion || "missing"} · Next review ${workspace.reviewDate || "missing"}`,
+    },
+    {
+      label: "Training log summary",
+      body: `${trainingCompletionRate}% assigned module completion across ${workspace.employees.length} employees`,
+    },
+    {
+      label: "Register summary",
+      body: `${workspace.register.length} tools logged · ${registerCoverageRate}% mapped to named staff`,
+    },
+    {
+      label: "Leadership oversight",
+      body: leadershipCovered ? "Board literacy briefing recorded" : "Board literacy briefing still pending",
+    },
+  ]
+
+  return (
+    <>
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Compliance pack settings</CardTitle>
+            <CardDescription>These fields are included in the export metadata.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Input
+              placeholder="Policy version"
+              value={workspace.policyVersion}
+              onChange={(event) => setCompanyField("policyVersion", event.target.value)}
+            />
+            <Input
+              type="date"
+              value={workspace.reviewDate}
+              onChange={(event) => setCompanyField("reviewDate", event.target.value)}
+            />
+          </CardContent>
+          <CardFooter className="justify-between gap-3">
+            <Badge variant={readinessScore >= 80 ? "default" : readinessScore >= 60 ? "secondary" : "destructive"}>
+              {readinessLabel}
+            </Badge>
+            <Button onClick={onExport}>
+              Download markdown pack
               <Download data-icon="inline-end" aria-hidden="true" />
             </Button>
           </CardFooter>
         </Card>
-      </div>
-    </section>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Pack preview</CardTitle>
+            <CardDescription>The export compiles current workspace state into a regulator-ready summary.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {reportSections.map((section) => (
+              <div key={section.label} className="rounded-lg border p-4">
+                <p className="font-medium">{section.label}</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{section.body}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Export contents</CardTitle>
+          <CardDescription>The download includes all records below in markdown form.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <EvidenceTile icon={Building2} label="Company and policy metadata" />
+          <EvidenceTile icon={UsersRound} label="Employee literacy records" />
+          <EvidenceTile icon={BriefcaseBusiness} label="AI register with risk and data mapping" />
+          <EvidenceTile icon={Sparkles} label="Readiness findings and next actions" />
+        </CardContent>
+      </Card>
+    </>
   )
 }
 
-function VaultTile({
+function SidebarButton({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean
+  icon: typeof Gauge
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "focus-ring flex min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm transition-[background-color,color]",
+        active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+      )}
+    >
+      <Icon aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  )
+}
+
+function MetricCard({
   icon: Icon,
   label,
   value,
 }: {
-  icon: ComponentType<SVGProps<SVGSVGElement>>
+  icon: typeof Gauge
   label: string
   value: string
 }) {
   return (
     <div className="rounded-lg border bg-background p-4">
-      <Icon className="mb-4 size-5 text-accent" aria-hidden="true" />
+      <Icon className="mb-6 text-primary" aria-hidden="true" />
       <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="mt-1 font-medium">{value}</p>
+      <p className="mt-1 font-display text-3xl font-semibold tracking-tight">{value}</p>
     </div>
   )
 }
 
-function TrainingSection() {
+function GapRow({ label, value }: { label: string; value: string }) {
   return (
-    <section id="training" className="bg-primary py-16 text-primary-foreground md:py-24">
-      <div className="mx-auto grid w-[min(94%,72rem)] grid-cols-1 gap-10 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div className="flex min-w-0 flex-col gap-6">
-          <span className="text-sm font-medium text-primary-foreground/70">Micro-learning engine</span>
-          <h2 className="display-wrap font-display text-3xl font-semibold tracking-tight md:text-[2.75rem] md:leading-[1.05]">
-            Short modules, strict evidence, role-specific exposure.
-          </h2>
-          <p className="max-w-[62ch] text-base leading-7 text-primary-foreground/76">
-            Staff enter through a magic link, finish the course on mobile or desktop, pass the
-            assessment, and leave an auditable record behind.
-          </p>
-          <Button className="w-fit rounded-full bg-primary-foreground text-primary hover:bg-primary-foreground/90">
-            Preview training
-            <Play data-icon="inline-end" aria-hidden="true" />
-          </Button>
-        </div>
-
-        <div className="grid gap-3">
-          {trainingRows.map(([module, audience, duration, status]) => (
-            <div
-              className="grid grid-cols-1 gap-3 rounded-lg border border-primary-foreground/12 bg-primary-foreground/7 p-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,0.75fr)_minmax(0,0.55fr)]"
-              key={module}
-            >
-              <div className="min-w-0">
-                <p className="font-medium">{module}</p>
-                <p className="text-sm text-primary-foreground/70">{audience}</p>
-              </div>
-              <p className="tnum text-sm text-primary-foreground/82">{duration}</p>
-              <Badge className="w-fit border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground">
-                {status}
-              </Badge>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function RegisterSection({ registerRows }: { registerRows: RegisterRow[] }) {
-  return (
-    <section id="risk" className="mx-auto w-[min(94%,72rem)] py-16 md:py-24">
-      <div className="grid grid-cols-1 gap-10 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-        <div className="flex min-w-0 flex-col gap-5">
-          <span className="text-sm font-medium text-muted-foreground">AI Use Register</span>
-          <h2 className="display-wrap font-display text-3xl font-semibold tracking-tight md:text-[2.75rem] md:leading-[1.05]">
-            The ledger most SMEs do not have yet.
-          </h2>
-          <p className="max-w-[62ch] text-base leading-7 text-muted-foreground">
-            Log each AI tool, who uses it, what data it touches, and which training module applies.
-            Risk flags update as the register changes.
-          </p>
-        </div>
-
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle className="font-display text-lg tracking-tight">Live register</CardTitle>
-            <CardDescription>
-              Mapped to users, data categories, and training status.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <div className="min-w-[46rem]">
-              <div className="grid grid-cols-[0.5fr_1.1fr_1fr_1fr_0.6fr_1.1fr] gap-2 border-b pb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                <span className="sr-only">Brand</span>
-                <span>Tool</span>
-                <span>Use case</span>
-                <span>Data</span>
-                <span>Risk</span>
-                <span>Status</span>
-              </div>
-              {registerRows.map((row) => (
-                <div
-                  className="grid grid-cols-[0.5fr_1.1fr_1fr_1fr_0.6fr_1.1fr] items-center gap-2 border-b py-3 text-sm last:border-b-0"
-                  key={row.tool}
-                >
-                  <span className="flex items-center" aria-hidden="true">
-                    <ToolMark tool={row} />
-                  </span>
-                  <span className="min-w-0 font-medium text-foreground">{row.tool}</span>
-                  <span className="min-w-0 text-muted-foreground">{row.useCase}</span>
-                  <span className="min-w-0 text-muted-foreground">{row.data}</span>
-                  <span className="tnum text-xs text-foreground">{row.risk}</span>
-                  <span className="min-w-0 text-muted-foreground">{row.status}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </section>
-  )
-}
-
-function PricingSection() {
-  return (
-    <section id="pricing" className="border-y bg-card/55">
-      <div className="mx-auto w-[min(94%,72rem)] py-16 md:py-24">
-        <div className="flex max-w-[40ch] flex-col gap-4 pb-10">
-          <span className="text-sm font-medium text-muted-foreground">Commercial model</span>
-          <h2 className="display-wrap font-display text-3xl font-semibold tracking-tight md:text-[2.75rem] md:leading-[1.05]">
-            Start with the audit hook. Expand into the system of record.
-          </h2>
-        </div>
-        <div
-          className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border sm:grid-cols-2 lg:grid-cols-4"
-          style={{ backgroundColor: "var(--color-rule)" }}
-        >
-          <PriceCard name="Panic Button" price="EUR 499" detail="One-time pack for micro-businesses with 10 seats." />
-          <PriceCard name="Growing Business" price="EUR 199/mo" detail="Up to 50 staff, register, reminders, and exports." />
-          <PriceCard name="Enterprise" price="EUR 499/mo+" detail="SSO, white-label portal, and compliance dashboard." />
-          <PriceCard name="CPD White-label" price="Custom" detail="Professional body distribution and accredited modules." />
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function PriceCard({ name, price, detail }: { name: string; price: string; detail: string }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-3 bg-background p-6">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="font-display text-lg font-semibold tracking-tight">{name}</h3>
-      </div>
-      <p className="tnum text-2xl font-semibold">{price}</p>
-      <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+    <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="font-display text-2xl font-semibold">{value}</span>
     </div>
   )
 }
 
-function ClosingCTA() {
+function EvidenceTile({
+  icon: Icon,
+  label,
+}: {
+  icon: typeof Gauge
+  label: string
+}) {
   return (
-    <section className="mx-auto w-[min(94%,72rem)] py-16 md:py-24">
-      <div className="flex flex-col items-start gap-6 rounded-2xl border bg-card p-8 md:p-12">
-        <h2 className="display-wrap font-display max-w-[24ch] text-3xl font-semibold tracking-tight md:text-[2.75rem] md:leading-[1.05]">
-          Run the check. See the gap. Close it before the regulator does.
-        </h2>
-        <p className="max-w-[62ch] text-base leading-7 text-muted-foreground">
-          The risk check is free and takes under two minutes. The audit pack is what you hand over
-          when someone asks to see your Article 4 evidence.
-        </p>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Button className="h-10 rounded-full px-5" size="lg">
-            Run risk check
-            <Gauge data-icon="inline-end" aria-hidden="true" />
-          </Button>
-          <Button className="h-10 rounded-full px-5" size="lg" variant="outline">
-            Book demo
-            <ArrowRight data-icon="inline-end" aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-    </section>
+    <div className="rounded-lg border bg-background p-4">
+      <Icon className="mb-4 text-primary" aria-hidden="true" />
+      <p className="text-sm leading-6">{label}</p>
+    </div>
   )
 }
 
-function SiteFooter() {
-  return (
-    <footer className="border-t">
-      <div className="mx-auto flex w-[min(94%,72rem)] flex-col gap-6 py-12 md:py-16">
-        <div className="flex max-w-[36ch] flex-col gap-3">
-          <p className="font-display text-2xl font-semibold tracking-tight">
-            Evidence, not enthusiasm.
-          </p>
-          <p className="text-sm leading-6 text-muted-foreground">
-            AIFirst turns AI literacy into audit-ready records for Irish employers under Article 4
-            of the EU AI Act.
-          </p>
-        </div>
-        <div className="hairline pt-6" />
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="grid size-6 place-items-center rounded-md bg-primary text-primary-foreground">
-              <ShieldCheck aria-hidden="true" className="size-3.5" />
-            </span>
-            <span className="font-semibold">AIFirst</span>
-          </div>
-          <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-            <a
-              className="focus-ring rounded-sm hover:text-foreground"
-              href="https://artificialintelligenceact.eu/ai-act-explorer/"
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              AI Act Explorer
-            </a>
-            <a
-              className="focus-ring rounded-sm hover:text-foreground"
-              href="https://digital-strategy.ec.europa.eu/en/faqs/ai-literacy-questions-answers"
-            >
-              EU AI Office Q&A
-            </a>
-            <a
-              className="focus-ring rounded-sm hover:text-foreground"
-              href="https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-99"
-            >
-              Article 99
-            </a>
-            <a
-              className="focus-ring rounded-sm hover:text-foreground"
-              href="https://www.oireachtas.ie/en/bills/bill/2026/69/"
-            >
-              Irish AI Bill
-            </a>
-          </div>
-        </div>
-      </div>
-    </footer>
+function buildCompliancePack(
+  workspace: WorkspaceState,
+  metrics: {
+    readinessScore: number
+    readinessLabel: string
+    trainingCompletionRate: number
+    registerCoverageRate: number
+    leadershipCovered: boolean
+  }
+) {
+  const employeeLines = workspace.employees
+    .map((employee) => {
+      const assigned = employee.assignedModules
+        .map((moduleId) => moduleDefinitions.find((module) => module.id === moduleId)?.title)
+        .filter(Boolean)
+        .join(", ")
+      const completed = employee.completedModules
+        .map((moduleId) => moduleDefinitions.find((module) => module.id === moduleId)?.title)
+        .filter(Boolean)
+        .join(", ")
+
+      return `- ${employee.name} (${employee.role}) · ${employee.email}
+  - Assigned: ${assigned || "None"}
+  - Completed: ${completed || "None"}
+  - Score: ${employee.score}`
+    })
+    .join("\n")
+
+  const registerLines = workspace.register
+    .map((item) => {
+      const mappedEmployees = item.employees
+        .map((employeeId) => workspace.employees.find((employee) => employee.id === employeeId)?.name)
+        .filter(Boolean)
+        .join(", ")
+
+      return `- ${item.toolName}
+  - Use case: ${item.useCase}
+  - Owner role: ${item.ownerRole}
+  - Risk: ${item.risk}
+  - Data sensitivity: ${item.data}
+  - Mapped employees: ${mappedEmployees || "None"}`
+    })
+    .join("\n")
+
+  return `# Article 4 Compliance Pack
+
+## Company
+- Name: ${workspace.companyName}
+- Policy version: ${workspace.policyVersion || "Missing"}
+- Next review date: ${workspace.reviewDate || "Missing"}
+
+## Readiness
+- Score: ${metrics.readinessScore}/100
+- Status: ${metrics.readinessLabel}
+- Training completion: ${metrics.trainingCompletionRate}%
+- Register coverage: ${metrics.registerCoverageRate}%
+- Board literacy covered: ${metrics.leadershipCovered ? "Yes" : "No"}
+
+## Employees
+${employeeLines}
+
+## AI Register
+${registerLines}
+
+## Required modules
+${moduleDefinitions
+  .map(
+    (module) => `- ${module.title} (${module.duration}) · Audience: ${module.audience}
+  - Outcomes: ${module.outcomes.join("; ")}`
   )
+  .join("\n")}
+
+## Immediate next actions
+- Finish all incomplete assigned modules.
+- Confirm all high-risk tools have named owners and mapped employees.
+- Keep the policy version and review cadence current.
+- Maintain board briefing evidence when leadership uses or oversees AI deployments.
+`
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
+function createId(prefix: string) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function readStoredWorkspace() {
+  if (typeof window === "undefined") {
+    return defaultState
+  }
+
+  const saved = window.localStorage.getItem(STORAGE_KEY)
+
+  if (!saved) {
+    return defaultState
+  }
+
+  try {
+    return JSON.parse(saved) as WorkspaceState
+  } catch {
+    window.localStorage.removeItem(STORAGE_KEY)
+    return defaultState
+  }
 }
