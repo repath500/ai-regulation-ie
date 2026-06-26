@@ -9,8 +9,12 @@ import {
   ChevronRight,
   ClipboardCheck,
   Download,
+  Pencil,
   FileText,
   Gauge,
+  RotateCcw,
+  Trash2,
+  Upload,
   Landmark,
   Plus,
   ShieldCheck,
@@ -220,6 +224,7 @@ export default function Home() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(
     () => readStoredWorkspace().employees[0]?.id ?? ""
   )
+  const [editingRegisterId, setEditingRegisterId] = useState<string | null>(null)
   const [selectedRegisterEmployees, setSelectedRegisterEmployees] = useState<string[]>([])
   const [search, setSearch] = useState("")
 
@@ -309,22 +314,43 @@ export default function Home() {
       return
     }
 
-    const newItem: RegisterItem = {
-      id: createId("tool"),
-      toolName: registerForm.toolName.trim(),
-      ownerRole: registerForm.ownerRole,
-      useCase: registerForm.useCase.trim(),
-      risk: registerForm.risk,
-      data: registerForm.data,
-      employees: selectedRegisterEmployees,
+    if (editingRegisterId) {
+      setWorkspace((current) => ({
+        ...current,
+        register: current.register.map((item) =>
+          item.id === editingRegisterId
+            ? {
+                ...item,
+                toolName: registerForm.toolName.trim(),
+                ownerRole: registerForm.ownerRole,
+                useCase: registerForm.useCase.trim(),
+                risk: registerForm.risk,
+                data: registerForm.data,
+                employees: selectedRegisterEmployees,
+              }
+            : item
+        ),
+      }))
+    } else {
+      const newItem: RegisterItem = {
+        id: createId("tool"),
+        toolName: registerForm.toolName.trim(),
+        ownerRole: registerForm.ownerRole,
+        useCase: registerForm.useCase.trim(),
+        risk: registerForm.risk,
+        data: registerForm.data,
+        employees: selectedRegisterEmployees,
+      }
+
+      setWorkspace((current) => ({
+        ...current,
+        register: [...current.register, newItem],
+      }))
     }
 
-    setWorkspace((current) => ({
-      ...current,
-      register: [...current.register, newItem],
-    }))
     setRegisterForm(emptyRegisterForm)
     setSelectedRegisterEmployees([])
+    setEditingRegisterId(null)
   }
 
   function toggleModuleCompletion(employeeId: string, moduleId: string) {
@@ -359,6 +385,164 @@ export default function Home() {
         ? current.filter((item) => item !== employeeId)
         : [...current, employeeId]
     )
+  }
+
+  function updateSelectedEmployee(
+    field: "name" | "email" | "role",
+    value: string
+  ) {
+    if (!selectedEmployee) {
+      return
+    }
+
+    setWorkspace((current) => ({
+      ...current,
+      employees: current.employees.map((employee) => {
+        if (employee.id !== selectedEmployee.id) {
+          return employee
+        }
+
+        if (field !== "role") {
+          return {
+            ...employee,
+            [field]: value,
+          }
+        }
+
+        const role = value as RoleCategory
+        const assignedModules = moduleDefinitions
+          .filter((module) => module.audience === "All" || module.audience === role)
+          .map((module) => module.id)
+        const completedModules = employee.completedModules.filter((moduleId) =>
+          assignedModules.includes(moduleId)
+        )
+        const score =
+          completedModules.length === 0
+            ? 0
+            : 70 + Math.round((completedModules.length / assignedModules.length) * 25)
+
+        return {
+          ...employee,
+          role,
+          assignedModules,
+          completedModules,
+          score,
+        }
+      }),
+    }))
+  }
+
+  function removeSelectedEmployee() {
+    if (!selectedEmployee) {
+      return
+    }
+
+    setWorkspace((current) => {
+      const employees = current.employees.filter((employee) => employee.id !== selectedEmployee.id)
+      const register = current.register.map((item) => ({
+        ...item,
+        employees: item.employees.filter((employeeId) => employeeId !== selectedEmployee.id),
+      }))
+
+      return {
+        ...current,
+        employees,
+        register,
+      }
+    })
+
+    setSelectedEmployeeId((current) => {
+      if (current !== selectedEmployee.id) {
+        return current
+      }
+
+      const fallback = workspace.employees.find((employee) => employee.id !== selectedEmployee.id)
+      return fallback?.id ?? ""
+    })
+  }
+
+  function startEditingRegisterItem(itemId: string) {
+    const item = workspace.register.find((entry) => entry.id === itemId)
+
+    if (!item) {
+      return
+    }
+
+    setEditingRegisterId(item.id)
+    setRegisterForm({
+      toolName: item.toolName,
+      useCase: item.useCase,
+      ownerRole: item.ownerRole,
+      risk: item.risk,
+      data: item.data,
+    })
+    setSelectedRegisterEmployees(item.employees)
+    setActiveView("register")
+  }
+
+  function removeRegisterItem(itemId: string) {
+    setWorkspace((current) => ({
+      ...current,
+      register: current.register.filter((item) => item.id !== itemId),
+    }))
+
+    if (editingRegisterId === itemId) {
+      setEditingRegisterId(null)
+      setRegisterForm(emptyRegisterForm)
+      setSelectedRegisterEmployees([])
+    }
+  }
+
+  function resetWorkspace() {
+    setWorkspace(defaultState)
+    setSelectedEmployeeId(defaultState.employees[0]?.id ?? "")
+    setEmployeeForm(emptyEmployeeForm)
+    setRegisterForm(emptyRegisterForm)
+    setEditingRegisterId(null)
+    setSelectedRegisterEmployees([])
+    setSearch("")
+  }
+
+  function exportWorkspaceSnapshot() {
+    const file = new Blob([JSON.stringify(workspace, null, 2)], {
+      type: "application/json;charset=utf-8",
+    })
+    const url = URL.createObjectURL(file)
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = `${slugify(workspace.companyName)}-workspace.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function importWorkspaceSnapshot(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+
+    if (!file) {
+      return
+    }
+
+    file
+      .text()
+      .then((text) => {
+        const parsed = JSON.parse(text) as WorkspaceState
+        if (!parsed.companyName || !Array.isArray(parsed.employees) || !Array.isArray(parsed.register)) {
+          throw new Error("Invalid snapshot")
+        }
+        setWorkspace(parsed)
+        setSelectedEmployeeId(parsed.employees[0]?.id ?? "")
+        setEditingRegisterId(null)
+        setEmployeeForm(emptyEmployeeForm)
+        setRegisterForm(emptyRegisterForm)
+        setSelectedRegisterEmployees([])
+        setSearch("")
+      })
+      .catch(() => {
+        window.alert("Could not import workspace file.")
+      })
+      .finally(() => {
+        event.target.value = ""
+      })
   }
 
   function exportCompliancePack() {
@@ -494,6 +678,8 @@ export default function Home() {
               addEmployee={addEmployee}
               setSelectedEmployeeId={setSelectedEmployeeId}
               toggleModuleCompletion={toggleModuleCompletion}
+              updateSelectedEmployee={updateSelectedEmployee}
+              removeSelectedEmployee={removeSelectedEmployee}
             />
           ) : null}
 
@@ -502,10 +688,13 @@ export default function Home() {
               register={workspace.register}
               employees={workspace.employees}
               registerForm={registerForm}
+              editingRegisterId={editingRegisterId}
               selectedRegisterEmployees={selectedRegisterEmployees}
               setRegisterForm={setRegisterForm}
               toggleRegisterEmployee={toggleRegisterEmployee}
               addRegisterItem={addRegisterItem}
+              startEditingRegisterItem={startEditingRegisterItem}
+              removeRegisterItem={removeRegisterItem}
             />
           ) : null}
 
@@ -523,6 +712,9 @@ export default function Home() {
               leadershipCovered={leadershipCovered}
               onExport={exportCompliancePack}
               setCompanyField={setCompanyField}
+              onExportSnapshot={exportWorkspaceSnapshot}
+              onImportSnapshot={importWorkspaceSnapshot}
+              onResetWorkspace={resetWorkspace}
             />
           ) : null}
         </div>
@@ -721,6 +913,8 @@ function EmployeesView({
   addEmployee,
   setSelectedEmployeeId,
   toggleModuleCompletion,
+  updateSelectedEmployee,
+  removeSelectedEmployee,
 }: {
   employeeForm: typeof emptyEmployeeForm
   filteredEmployees: Employee[]
@@ -731,6 +925,8 @@ function EmployeesView({
   addEmployee: () => void
   setSelectedEmployeeId: (employeeId: string) => void
   toggleModuleCompletion: (employeeId: string, moduleId: string) => void
+  updateSelectedEmployee: (field: "name" | "email" | "role", value: string) => void
+  removeSelectedEmployee: () => void
 }) {
   return (
     <>
@@ -828,10 +1024,42 @@ function EmployeesView({
               Mark modules complete to update the employee’s evidence record.
             </CardDescription>
             <CardAction>
-              <Badge variant="secondary">{selectedEmployee.role}</Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{selectedEmployee.role}</Badge>
+                <button
+                  className="focus-ring inline-flex h-8 items-center justify-center rounded-lg border px-2 text-sm text-muted-foreground transition-[background-color,color] hover:bg-secondary hover:text-foreground"
+                  onClick={removeSelectedEmployee}
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" />
+                </button>
+              </div>
             </CardAction>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-1 gap-3 rounded-lg border p-4 md:grid-cols-3">
+              <Input
+                value={selectedEmployee.name}
+                onChange={(event) => updateSelectedEmployee("name", event.target.value)}
+              />
+              <Input
+                value={selectedEmployee.email}
+                onChange={(event) => updateSelectedEmployee("email", event.target.value)}
+              />
+              <select
+                className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                value={selectedEmployee.role}
+                onChange={(event) => updateSelectedEmployee("role", event.target.value)}
+              >
+                {(["General", "HR", "Marketing", "Leadership", "Legal"] as RoleCategory[]).map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {moduleDefinitions
               .filter((module) => selectedEmployee.assignedModules.includes(module.id))
               .map((module) => {
@@ -866,6 +1094,7 @@ function EmployeesView({
                   </button>
                 )
               })}
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -877,18 +1106,24 @@ function RegisterView({
   register,
   employees,
   registerForm,
+  editingRegisterId,
   selectedRegisterEmployees,
   setRegisterForm,
   toggleRegisterEmployee,
   addRegisterItem,
+  startEditingRegisterItem,
+  removeRegisterItem,
 }: {
   register: RegisterItem[]
   employees: Employee[]
   registerForm: typeof emptyRegisterForm
+  editingRegisterId: string | null
   selectedRegisterEmployees: string[]
   setRegisterForm: Dispatch<SetStateAction<typeof emptyRegisterForm>>
   toggleRegisterEmployee: (employeeId: string) => void
   addRegisterItem: () => void
+  startEditingRegisterItem: (itemId: string) => void
+  removeRegisterItem: (itemId: string) => void
 }) {
   return (
     <>
@@ -967,11 +1202,15 @@ function RegisterView({
           </CardContent>
           <CardFooter className="justify-between gap-3">
             <span className="text-sm text-muted-foreground">
-              Assign the people affected below before saving.
+              {editingRegisterId ? "Editing existing tool entry." : "Assign the people affected below before saving."}
             </span>
             <Button onClick={addRegisterItem}>
-              Save tool
-              <Plus data-icon="inline-end" aria-hidden="true" />
+              {editingRegisterId ? "Update tool" : "Save tool"}
+              {editingRegisterId ? (
+                <Pencil data-icon="inline-end" aria-hidden="true" />
+              ) : (
+                <Plus data-icon="inline-end" aria-hidden="true" />
+              )}
             </Button>
           </CardFooter>
         </Card>
@@ -1027,7 +1266,25 @@ function RegisterView({
                 </Badge>
               </div>
               <div className="text-sm text-muted-foreground">
-                {item.employees.length} mapped employee{item.employees.length === 1 ? "" : "s"}
+                <div>{item.employees.length} mapped employee{item.employees.length === 1 ? "" : "s"}</div>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    className="focus-ring inline-flex h-8 items-center gap-2 rounded-lg border px-2 text-sm transition-[background-color,color] hover:bg-secondary"
+                    onClick={() => startEditingRegisterItem(item.id)}
+                    type="button"
+                  >
+                    <Pencil aria-hidden="true" />
+                    Edit
+                  </button>
+                  <button
+                    className="focus-ring inline-flex h-8 items-center gap-2 rounded-lg border px-2 text-sm transition-[background-color,color] hover:bg-secondary"
+                    onClick={() => removeRegisterItem(item.id)}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" />
+                    Remove
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -1133,6 +1390,9 @@ function VaultView({
   leadershipCovered,
   onExport,
   setCompanyField,
+  onExportSnapshot,
+  onImportSnapshot,
+  onResetWorkspace,
 }: {
   workspace: WorkspaceState
   readinessScore: number
@@ -1142,6 +1402,9 @@ function VaultView({
   leadershipCovered: boolean
   onExport: () => void
   setCompanyField: <K extends keyof WorkspaceState>(field: K, value: WorkspaceState[K]) => void
+  onExportSnapshot: () => void
+  onImportSnapshot: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onResetWorkspace: () => void
 }) {
   const reportSections = [
     {
@@ -1208,6 +1471,30 @@ function VaultView({
           </CardContent>
         </Card>
       </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Workspace backup</CardTitle>
+          <CardDescription>Move this company dataset between browsers without losing the app state.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-2">
+            <Button variant="outline" onClick={onExportSnapshot}>
+              Export workspace JSON
+              <Download data-icon="inline-end" aria-hidden="true" />
+            </Button>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-[background-color,color] hover:bg-secondary">
+              <Upload aria-hidden="true" />
+              Import workspace JSON
+              <input className="hidden" type="file" accept="application/json" onChange={onImportSnapshot} />
+            </label>
+          </div>
+          <Button variant="outline" onClick={onResetWorkspace}>
+            Reset demo data
+            <RotateCcw data-icon="inline-end" aria-hidden="true" />
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
